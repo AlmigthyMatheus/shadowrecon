@@ -4,8 +4,18 @@ import argparse
 
 def resolver_dominio(dominio):
     try:
-        ip = socket.gethostbyname(dominio)
-        print(f"[+] O IP de {dominio} é: {ip}")
+        nome, aliases, ips = socket.gethostbyname_ex(dominio)
+
+        print(f"[+] Domínio Analisado: {dominio}")
+        print(f"[+] Hostname Oficial: {nome}")
+
+        if aliases:
+            print(f"[+] Apelidos (Aliases): {', '.join(aliases)}")
+
+        print(f"[+] Endereços IP Encontrados ({len(ips)}):")
+        for ip in ips:
+            print(f"    └─ {ip}")
+
     except socket.gaierror:
         print(f"[-] Erro: Não foi possível resolver o domínio '{dominio}'.")
 
