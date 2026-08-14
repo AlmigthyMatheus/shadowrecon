@@ -2,26 +2,26 @@ import socket
 import argparse
 
 
-def resolver_dominio(dominio):
+def resolve_domain(domain):
     try:
-        nome, aliases, ips = socket.gethostbyname_ex(dominio)
+        hostname, aliases, ips = socket.gethostbyname_ex(domain)
 
-        print(f"[+] Domínio Analisado: {dominio}")
-        print(f"[+] Hostname Oficial: {nome}")
+        print(f"[+] Target Domain: {domain}")
+        print(f"[+] Official Hostname: {hostname}")
 
         if aliases:
-            print(f"[+] Apelidos (Aliases): {', '.join(aliases)}")
+            print(f"[+] Aliases: {', '.join(aliases)}")
 
-        print(f"[+] Endereços IP Encontrados ({len(ips)}):")
+        print(f"[+] IP Addresses Found ({len(ips)}):")
         for ip in ips:
             try:
-                host_reverso, _, _ = socket.gethostbyaddr(ip)
-                print(f"    └─ {ip} ➔ Reverse DNS: {host_reverso}")
+                reverse_host, _, _ = socket.gethostbyaddr(ip)
+                print(f"    └─ {ip} ➔ Reverse DNS: {reverse_host}")
             except socket.herror:
-                print(f"    └─ {ip} ➔ Reverse DNS: [Nenhum registro PTR]")
+                print(f"    └─ {ip} ➔ Reverse DNS: [No PTR record]")
 
     except socket.gaierror:
-        print(f"[-] Erro: Não foi possível resolver o domínio '{dominio}'.")
+        print(f"[-] Error: Could not resolve domain '{domain}'.")
 
 
 def main():
@@ -36,7 +36,7 @@ def main():
     )
 
     args = parser.parse_args()
-    resolver_dominio(args.domain)
+    resolve_domain(args.domain)
 
 
 if __name__ == "__main__":
