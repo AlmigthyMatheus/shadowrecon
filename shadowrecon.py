@@ -14,7 +14,11 @@ def resolver_dominio(dominio):
 
         print(f"[+] Endereços IP Encontrados ({len(ips)}):")
         for ip in ips:
-            print(f"    └─ {ip}")
+            try:
+                host_reverso, _, _ = socket.gethostbyaddr(ip)
+                print(f"    └─ {ip} ➔ Reverse DNS: {host_reverso}")
+            except socket.herror:
+                print(f"    └─ {ip} ➔ Reverse DNS: [Nenhum registro PTR]")
 
     except socket.gaierror:
         print(f"[-] Erro: Não foi possível resolver o domínio '{dominio}'.")
