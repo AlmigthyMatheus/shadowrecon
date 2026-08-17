@@ -1,15 +1,13 @@
 import socket
 import argparse
 
-# ANSI Color Codes for Intense Red Theme
-BOLD_RED = "\033[1;91m"  # Strong/Intense Bright Red
-RED = "\033[91m"  # Bright Red
-GRAY = "\033[90m"  # Dimmed Grey
-BOLD_WHITE = "\033[1;97m"  # High-contrast White
+BOLD_RED = "\033[1;91m"
+RED = "\033[91m"
+GRAY = "\033[90m"
+BOLD_WHITE = "\033[1;97m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-# Modern Slant ASCII Art Banner in Intense Red
 BANNER = fr"""{BOLD_RED}
    _____ __            __             ____                   
   / ___// /_  ____ _/ /_  ____  _  / __ \___  _________  ____ 
