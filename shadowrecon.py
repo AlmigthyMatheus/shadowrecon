@@ -28,6 +28,30 @@ COMMON_PORTS = {
     8080: "HTTP-ALT"
 }
 
+COMMON_SUBDOMAINS = [
+    "www", "mail", "dev", "api", "admin", "test",
+    "vpn", "blog", "portal", "stage", "app", "db"
+]
+
+
+def enumerate_subdomains(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Starting Subdomain Enumeration on {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    found_subdomains = []
+
+    for sub in COMMON_SUBDOMAINS:
+        target_subdomain = f"{sub}.{domain}"
+        try:
+            ip = socket.gethostbyname(target_subdomain)
+            print(f"{GRAY}    └─ {BOLD_WHITE}{target_subdomain}{GRAY} ➔ Resolved IP: {BOLD_RED}{ip}{RESET}")
+            found_subdomains.append({"subdomain": target_subdomain, "ip": ip})
+        except socket.gaierror:
+            pass
+
+    if not found_subdomains:
+        print(f"{GRAY}    └─ [-] No active subdomains found from default wordlist.{RESET}")
+
+    return found_subdomains
+
 
 def check_ports(ip):
     open_ports = []
@@ -49,12 +73,13 @@ def check_ports(ip):
     return open_ports
 
 
-def resolve_domain(domain, scan_ports=False, output_file=None):
+def resolve_domain(domain, scan_ports=False, scan_subdomains=False, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
         "aliases": [],
-        "ip_addresses": []
+        "ip_addresses": [],
+        "subdomains": []
     }
 
     try:
@@ -82,6 +107,9 @@ def resolve_domain(domain, scan_ports=False, output_file=None):
                 ip_info["open_ports"] = check_ports(ip)
 
             scan_data["ip_addresses"].append(ip_info)
+
+        if scan_subdomains:
+            scan_data["subdomains"] = enumerate_subdomains(domain)
 
         if output_file:
             try:
@@ -116,12 +144,23 @@ def main():
     )
 
     parser.add_argument(
+        "-sub", "--subdomains",
+        action="store_true",
+        help="Perform wordlist-based subdomain enumeration"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Output file path to save results in JSON format (e.g., report.json)"
     )
 
     args = parser.parse_args()
-    resolve_domain(args.domain, scan_ports=args.scan_ports, output_file=args.output)
+    resolve_domain(
+        args.domain,
+        scan_ports=args.scan_ports,
+        scan_subdomains=args.subdomains,
+        output_file=args.output
+    )
 
 
 if __name__ == "__main__":
