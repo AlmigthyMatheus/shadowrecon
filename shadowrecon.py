@@ -1,5 +1,6 @@
 import socket
 import argparse
+import json
 
 BOLD_RED = "\033[1;91m"
 RED = "\033[91m"
@@ -39,16 +40,27 @@ def check_ports(ip):
         result = s.connect_ex((ip, port))
         if result == 0:
             print(f"        {BOLD_RED}[!] Port {port} ({service}): OPEN{RESET}")
-            open_ports.append(port)
+            open_ports.append({"port": port, "service": service})
         s.close()
 
     if not open_ports:
         print(f"        {GRAY}[-] No common ports open on {ip}.{RESET}")
 
+    return open_ports
 
-def resolve_domain(domain, scan_ports=False):
+
+def resolve_domain(domain, scan_ports=False, output_file=None):
+    scan_data = {
+        "target_domain": domain,
+        "official_hostname": None,
+        "aliases": [],
+        "ip_addresses": []
+    }
+
     try:
         hostname, aliases, ips = socket.gethostbyname_ex(domain)
+        scan_data["official_hostname"] = hostname
+        scan_data["aliases"] = aliases
 
         print(f"{BOLD_RED}[+]{RESET} {GRAY}Target Domain:{RESET} {BOLD_WHITE}{domain}{RESET}")
         print(f"{BOLD_RED}[+]{RESET} {GRAY}Official Hostname:{RESET} {BOLD_WHITE}{hostname}{RESET}")
@@ -58,14 +70,27 @@ def resolve_domain(domain, scan_ports=False):
 
         print(f"{BOLD_RED}[+]{RESET} {GRAY}IP Addresses Found ({len(ips)}):{RESET}")
         for ip in ips:
+            ip_info = {"ip": ip, "reverse_dns": None, "open_ports": []}
             try:
                 reverse_host, _, _ = socket.gethostbyaddr(ip)
+                ip_info["reverse_dns"] = reverse_host
                 print(f"{GRAY}    └─ {BOLD_WHITE}{ip}{GRAY} ➔ Reverse DNS: {BOLD_RED}{reverse_host}{RESET}")
             except socket.herror:
                 print(f"{GRAY}    └─ {BOLD_WHITE}{ip}{GRAY} ➔ Reverse DNS: {RED}[No PTR record]{RESET}")
 
             if scan_ports:
-                check_ports(ip)
+                ip_info["open_ports"] = check_ports(ip)
+
+            scan_data["ip_addresses"].append(ip_info)
+
+        if output_file:
+            try:
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(scan_data, f, indent=4)
+                print(
+                    f"\n{BOLD_RED}[+]{RESET} {GRAY}Results successfully exported to:{RESET} {BOLD_WHITE}{output_file}{RESET}")
+            except Exception as e:
+                print(f"\n{BOLD_RED}[-]{RESET} {GRAY}Failed to write output file: {e}{RESET}")
 
     except socket.gaierror:
         print(f"{BOLD_RED}[-] Error: Could not resolve domain '{domain}'.{RESET}")
@@ -90,8 +115,13 @@ def main():
         help="Perform a quick TCP scan on common ports (21, 22, 80, 443, 8080)"
     )
 
+    parser.add_argument(
+        "-o", "--output",
+        help="Output file path to save results in JSON format (e.g., report.json)"
+    )
+
     args = parser.parse_args()
-    resolve_domain(args.domain, scan_ports=args.scan_ports)
+    resolve_domain(args.domain, scan_ports=args.scan_ports, output_file=args.output)
 
 
 if __name__ == "__main__":
