@@ -1,6 +1,8 @@
 import socket
 import argparse
 import json
+import urllib.request
+import ssl
 
 BOLD_RED = "\033[1;91m"
 RED = "\033[91m"
@@ -8,6 +10,7 @@ GRAY = "\033[90m"
 BOLD_WHITE = "\033[1;97m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
+
 
 BANNER = fr"""{BOLD_RED}
    _____ __            __             ____                   
@@ -32,6 +35,52 @@ COMMON_SUBDOMAINS = [
     "www", "mail", "dev", "api", "admin", "test",
     "vpn", "blog", "portal", "stage", "app", "db"
 ]
+
+
+def get_http_headers(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Fetching HTTP/HTTPS Headers for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    headers_info = {}
+
+
+    for protocol in ["https", "http"]:
+        url = f"{protocol}://{domain}"
+        try:
+
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'ShadowRecon-Bot/1.0'}
+            )
+
+            with urllib.request.urlopen(req, timeout=3, context=ctx) as response:
+                status = response.status
+                server = response.headers.get('Server', 'Unknown')
+                powered_by = response.headers.get('X-Powered-By', 'Not specified')
+
+                print(f"{GRAY}    └─ Protocol: {BOLD_WHITE}{protocol.upper()}{RESET}")
+                print(f"{GRAY}    └─ Status Code: {BOLD_RED}{status}{RESET}")
+                print(f"{GRAY}    └─ Server Header: {BOLD_WHITE}{server}{RESET}")
+                if powered_by != 'Not specified':
+                    print(f"{GRAY}    └─ X-Powered-By: {BOLD_WHITE}{powered_by}{RESET}")
+
+                headers_info = {
+                    "protocol": protocol,
+                    "status_code": status,
+                    "server": server,
+                    "x_powered_by": powered_by,
+                    "headers": dict(response.headers)
+                }
+                break
+        except Exception:
+            continue
+
+    if not headers_info:
+        print(f"{GRAY}    └─ [-] Could not retrieve HTTP/HTTPS headers.{RESET}")
+
+    return headers_info
 
 
 def enumerate_subdomains(domain):
@@ -73,13 +122,14 @@ def check_ports(ip):
     return open_ports
 
 
-def resolve_domain(domain, scan_ports=False, scan_subdomains=False, output_file=None):
+def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
         "aliases": [],
         "ip_addresses": [],
-        "subdomains": []
+        "subdomains": [],
+        "http_headers": {}
     }
 
     try:
@@ -111,6 +161,11 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, output_file=
         if scan_subdomains:
             scan_data["subdomains"] = enumerate_subdomains(domain)
 
+
+        if fetch_headers:
+            scan_data["http_headers"] = get_http_headers(domain)
+
+        # Export to JSON file
         if output_file:
             try:
                 with open(output_file, "w", encoding="utf-8") as f:
@@ -150,6 +205,12 @@ def main():
     )
 
     parser.add_argument(
+        "-hb", "--headers",
+        action="store_true",
+        help="Fetch HTTP/HTTPS web server headers and fingerprint technology"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Output file path to save results in JSON format (e.g., report.json)"
     )
@@ -159,6 +220,7 @@ def main():
         args.domain,
         scan_ports=args.scan_ports,
         scan_subdomains=args.subdomains,
+        fetch_headers=args.headers,
         output_file=args.output
     )
 
