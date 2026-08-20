@@ -47,14 +47,11 @@ def get_ssl_info(domain):
             with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
                 cert = ssock.getpeercert()
 
-                # Extract Issuer details
                 issuer = dict(x[0] for x in cert.get('issuer', []))
                 issuer_name = issuer.get('organizationName', 'Unknown')
 
-                # Extract Expiration date
                 not_after = cert.get('notAfter', 'Unknown')
 
-                # Extract SANs (Subject Alternative Names)
                 sans = [item[1] for item in cert.get('subjectAltName', []) if item[0] == 'DNS']
 
                 print(f"{GRAY}    └─ Issuer: {BOLD_WHITE}{issuer_name}{RESET}")
