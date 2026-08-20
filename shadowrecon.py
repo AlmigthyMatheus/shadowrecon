@@ -37,15 +37,51 @@ COMMON_SUBDOMAINS = [
 ]
 
 
+def get_ssl_info(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Inspecting SSL/TLS Certificate for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    ssl_info = {}
+    try:
+        ctx = ssl.create_default_context()
+
+        with socket.create_connection((domain, 443), timeout=3) as sock:
+            with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
+                cert = ssock.getpeercert()
+
+                # Extract Issuer details
+                issuer = dict(x[0] for x in cert.get('issuer', []))
+                issuer_name = issuer.get('organizationName', 'Unknown')
+
+                # Extract Expiration date
+                not_after = cert.get('notAfter', 'Unknown')
+
+                # Extract SANs (Subject Alternative Names)
+                sans = [item[1] for item in cert.get('subjectAltName', []) if item[0] == 'DNS']
+
+                print(f"{GRAY}    └─ Issuer: {BOLD_WHITE}{issuer_name}{RESET}")
+                print(f"{GRAY}    └─ Expiration Date: {BOLD_RED}{not_after}{RESET}")
+                if sans:
+                    displayed_sans = ', '.join(sans[:5])
+                    more_tag = f" (+{len(sans) - 5} more)" if len(sans) > 5 else ""
+                    print(f"{GRAY}    └─ Alternative Names (SANs): {BOLD_WHITE}{displayed_sans}{more_tag}{RESET}")
+
+                ssl_info = {
+                    "issuer": issuer_name,
+                    "expiration_date": not_after,
+                    "subject_alt_names": sans
+                }
+    except Exception as e:
+        print(f"{GRAY}    └─ [-] Could not retrieve SSL certificate: {e}{RESET}")
+
+    return ssl_info
+
+
 def get_http_headers(domain):
     print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Fetching HTTP/HTTPS Headers for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
     headers_info = {}
 
-
     for protocol in ["https", "http"]:
         url = f"{protocol}://{domain}"
         try:
-
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
@@ -122,14 +158,16 @@ def check_ports(ip):
     return open_ports
 
 
-def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, output_file=None):
+def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, inspect_ssl=False,
+                   output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
         "aliases": [],
         "ip_addresses": [],
         "subdomains": [],
-        "http_headers": {}
+        "http_headers": {},
+        "ssl_info": {}
     }
 
     try:
@@ -158,6 +196,7 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
 
             scan_data["ip_addresses"].append(ip_info)
 
+
         if scan_subdomains:
             scan_data["subdomains"] = enumerate_subdomains(domain)
 
@@ -165,7 +204,11 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
         if fetch_headers:
             scan_data["http_headers"] = get_http_headers(domain)
 
-        # Export to JSON file
+
+        if inspect_ssl:
+            scan_data["ssl_info"] = get_ssl_info(domain)
+
+
         if output_file:
             try:
                 with open(output_file, "w", encoding="utf-8") as f:
@@ -211,6 +254,12 @@ def main():
     )
 
     parser.add_argument(
+        "-ssl", "--ssl-info",
+        action="store_true",
+        help="Inspect SSL/TLS certificate, expiration date, and SANs"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Output file path to save results in JSON format (e.g., report.json)"
     )
@@ -221,6 +270,7 @@ def main():
         scan_ports=args.scan_ports,
         scan_subdomains=args.subdomains,
         fetch_headers=args.headers,
+        inspect_ssl=args.ssl_info,
         output_file=args.output
     )
 
