@@ -220,7 +220,7 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
 
             scan_data["ip_addresses"].append(ip_info)
 
-        if scan_dns:
+        if fetch_dns:
             scan_data["dns_records"] = get_dns_records(domain)
 
         if scan_subdomains:
