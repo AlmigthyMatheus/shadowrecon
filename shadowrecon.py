@@ -36,6 +36,32 @@ COMMON_SUBDOMAINS = [
 ]
 
 
+def get_dns_records(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Fetching DNS Records (MX, TXT, NS) for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    records_info = {"MX": [], "TXT": [], "NS": []}
+
+    for r_type in ["MX", "TXT", "NS"]:
+        try:
+            url = f"https://dns.google/resolve?name={domain}&type={r_type}"
+            req = urllib.request.Request(url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'})
+            with urllib.request.urlopen(req, timeout=3) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                answers = data.get("Answer", [])
+                if answers:
+                    print(f"{GRAY}    └─ Type {BOLD_WHITE}{r_type}{GRAY}:{RESET}")
+                    for ans in answers:
+                        val = ans.get("data", "").strip('"')
+                        records_info[r_type].append(val)
+                        print(f"{GRAY}        [➔] {BOLD_RED}{val}{RESET}")
+        except Exception:
+            pass
+
+    if not any(records_info.values()):
+        print(f"{GRAY}    └─ [-] Could not retrieve DNS records.{RESET}")
+
+    return records_info
+
+
 def get_ip_geo(ip):
     print(f"{GRAY}    └─ Fetching Geolocation & ASN for {BOLD_WHITE}{ip}{GRAY}...{RESET}")
     geo_info = {}
@@ -153,7 +179,7 @@ def check_ports(ip):
 
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, inspect_ssl=False,
-                   fetch_geo=False, output_file=None):
+                   fetch_geo=False, fetch_dns=False, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -161,7 +187,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
         "ip_addresses": [],
         "subdomains": [],
         "http_headers": {},
-        "ssl_info": {}
+        "ssl_info": {},
+        "dns_records": {}
     }
 
     try:
@@ -192,6 +219,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
                 ip_info["open_ports"] = check_ports(ip)
 
             scan_data["ip_addresses"].append(ip_info)
+
+        if scan_dns:
+            scan_data["dns_records"] = get_dns_records(domain)
 
         if scan_subdomains:
             scan_data["subdomains"] = enumerate_subdomains(domain)
@@ -259,6 +289,12 @@ def main():
     )
 
     parser.add_argument(
+        "-dns", "--dns-records",
+        action="store_true",
+        help="Fetch MX, TXT, and NS DNS records"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Output file path to save results in JSON format (e.g., report.json)"
     )
@@ -271,6 +307,7 @@ def main():
         fetch_headers=args.headers,
         inspect_ssl=args.ssl_info,
         fetch_geo=args.geolocation,
+        fetch_dns=args.dns_records,
         output_file=args.output
     )
 
