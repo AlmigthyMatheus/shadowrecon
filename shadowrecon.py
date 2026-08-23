@@ -3,6 +3,7 @@ import argparse
 import json
 import urllib.request
 import ssl
+import re
 
 BOLD_RED = "\033[1;91m"
 RED = "\033[91m"
@@ -34,6 +35,53 @@ COMMON_SUBDOMAINS = [
     "www", "mail", "dev", "api", "admin", "test",
     "vpn", "blog", "portal", "stage", "app", "db"
 ]
+
+
+def check_robots_txt(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Checking robots.txt for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    robots_info = {"status": False, "disallowed_paths": [], "sitemaps": []}
+
+    for protocol in ["https", "http"]:
+        url = f"{protocol}://{domain}/robots.txt"
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'})
+
+            with urllib.request.urlopen(req, timeout=3, context=ctx) as response:
+                if response.status == 200:
+                    content = response.read().decode('utf-8', errors='ignore')
+                    robots_info["status"] = True
+
+                    disallowed = re.findall(r'(?i)Disallow:\s*(.*)', content)
+                    sitemaps = re.findall(r'(?i)Sitemap:\s*(.*)', content)
+
+                    clean_disallowed = [p.strip() for p in disallowed if p.strip()]
+                    clean_sitemaps = [s.strip() for s in sitemaps if s.strip()]
+
+                    robots_info["disallowed_paths"] = clean_disallowed
+                    robots_info["sitemaps"] = clean_sitemaps
+
+                    print(f"{GRAY}    └─ Status: {BOLD_RED}200 OK (Found){RESET}")
+                    if clean_disallowed:
+                        print(f"{GRAY}    └─ Disallowed Entries Found ({len(clean_disallowed)}):{RESET}")
+                        for entry in clean_disallowed[:5]:
+                            print(f"{GRAY}        [➔] {BOLD_WHITE}{entry}{RESET}")
+                        if len(clean_disallowed) > 5:
+                            print(f"{GRAY}        [➔] ... and {len(clean_disallowed) - 5} more{RESET}")
+                    if clean_sitemaps:
+                        print(f"{GRAY}    └─ Sitemaps Found ({len(clean_sitemaps)}):{RESET}")
+                        for sm in clean_sitemaps:
+                            print(f"{GRAY}        [➔] {BOLD_RED}{sm}{RESET}")
+                    break
+        except Exception:
+            continue
+
+    if not robots_info["status"]:
+        print(f"{GRAY}    └─ [-] Could not retrieve or locate robots.txt.{RESET}")
+
+    return robots_info
 
 
 def get_dns_records(domain):
@@ -179,7 +227,7 @@ def check_ports(ip):
 
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, inspect_ssl=False,
-                   fetch_geo=False, fetch_dns=False, output_file=None):
+                   fetch_geo=False, fetch_dns=False, fetch_robots=False, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -188,7 +236,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
         "subdomains": [],
         "http_headers": {},
         "ssl_info": {},
-        "dns_records": {}
+        "dns_records": {},
+        "robots_txt": {}
     }
 
     try:
@@ -231,6 +280,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
 
         if inspect_ssl:
             scan_data["ssl_info"] = get_ssl_info(domain)
+
+        if fetch_robots:
+            scan_data["robots_txt"] = check_robots_txt(domain)
 
         if output_file:
             try:
@@ -295,6 +347,12 @@ def main():
     )
 
     parser.add_argument(
+        "-r", "--robots",
+        action="store_true",
+        help="Check and extract disallowed paths from robots.txt"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Output file path to save results in JSON format (e.g., report.json)"
     )
@@ -308,6 +366,7 @@ def main():
         inspect_ssl=args.ssl_info,
         fetch_geo=args.geolocation,
         fetch_dns=args.dns_records,
+        fetch_robots=args.robots,
         output_file=args.output
     )
 
