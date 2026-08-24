@@ -37,6 +37,50 @@ COMMON_SUBDOMAINS = [
 ]
 
 
+def get_whois_info(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Fetching WHOIS/RDAP Information for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    whois_info = {"registrar": "Unknown", "creation_date": "Unknown", "expiration_date": "Unknown", "status": []}
+
+    try:
+        url = f"https://rdap.org/domain/{domain}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+
+                entities = data.get("entities", [])
+                for entity in entities:
+                    roles = entity.get("roles", [])
+                    if "registrar" in roles:
+                        vcard = entity.get("vcardArray", [])
+                        if len(vcard) > 1:
+                            for item in vcard[1]:
+                                if item[0] == "fn":
+                                    whois_info["registrar"] = item[3]
+                                    break
+
+                events = data.get("events", [])
+                for event in events:
+                    action = event.get("eventAction")
+                    date_val = event.get("eventDate", "Unknown")
+                    if action == "registration":
+                        whois_info["creation_date"] = date_val
+                    elif action == "expiration":
+                        whois_info["expiration_date"] = date_val
+
+                whois_info["status"] = data.get("status", [])
+
+                print(f"{GRAY}    └─ Registrar: {BOLD_WHITE}{whois_info['registrar']}{RESET}")
+                print(f"{GRAY}    └─ Creation Date: {BOLD_WHITE}{whois_info['creation_date']}{RESET}")
+                print(f"{GRAY}    └─ Expiration Date: {BOLD_RED}{whois_info['expiration_date']}{RESET}")
+                if whois_info["status"]:
+                    print(f"{GRAY}    └─ Status: {BOLD_WHITE}{', '.join(whois_info['status'][:3])}{RESET}")
+    except Exception:
+        print(f"{GRAY}    └─ [-] Could not retrieve WHOIS/RDAP information.{RESET}")
+
+    return whois_info
+
+
 def check_robots_txt(domain):
     print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Checking robots.txt for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
     robots_info = {"status": False, "disallowed_paths": [], "sitemaps": []}
@@ -227,7 +271,7 @@ def check_ports(ip):
 
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, inspect_ssl=False,
-                   fetch_geo=False, fetch_dns=False, fetch_robots=False, output_file=None):
+                   fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -237,7 +281,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
         "http_headers": {},
         "ssl_info": {},
         "dns_records": {},
-        "robots_txt": {}
+        "robots_txt": {},
+        "whois_info": {}
     }
 
     try:
@@ -268,6 +313,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
                 ip_info["open_ports"] = check_ports(ip)
 
             scan_data["ip_addresses"].append(ip_info)
+
+        if fetch_whois:
+            scan_data["whois_info"] = get_whois_info(domain)
 
         if fetch_dns:
             scan_data["dns_records"] = get_dns_records(domain)
@@ -353,6 +401,12 @@ def main():
     )
 
     parser.add_argument(
+        "-w", "--whois",
+        action="store_true",
+        help="Fetch WHOIS domain registration data via RDAP protocol"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Output file path to save results in JSON format (e.g., report.json)"
     )
@@ -367,6 +421,7 @@ def main():
         fetch_geo=args.geolocation,
         fetch_dns=args.dns_records,
         fetch_robots=args.robots,
+        fetch_whois=args.whois,
         output_file=args.output
     )
 
