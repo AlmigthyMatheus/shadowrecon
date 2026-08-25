@@ -4,6 +4,7 @@ import json
 import urllib.request
 import ssl
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 BOLD_RED = "\033[1;91m"
 RED = "\033[91m"
@@ -35,6 +36,62 @@ COMMON_SUBDOMAINS = [
     "www", "mail", "dev", "api", "admin", "test",
     "vpn", "blog", "portal", "stage", "app", "db"
 ]
+
+
+def check_single_port(ip_port):
+    ip, port, service = ip_port
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(1.0)
+    result = s.connect_ex((ip, port))
+    s.close()
+    if result == 0:
+        print(f"        {BOLD_RED}[!] Port {port} ({service}): OPEN{RESET}")
+        return {"port": port, "service": service}
+    return None
+
+
+def check_ports(ip, max_threads=5):
+    open_ports = []
+    print(f"{GRAY}    └─ Scanning common ports on {BOLD_WHITE}{ip}{GRAY} (Threads: {max_threads})...{RESET}")
+    tasks = [(ip, port, service) for port, service in COMMON_PORTS.items()]
+
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        results = executor.map(check_single_port, tasks)
+        for res in results:
+            if res:
+                open_ports.append(res)
+
+    if not open_ports:
+        print(f"        {GRAY}[-] No common ports open on {ip}.{RESET}")
+    return open_ports
+
+
+def check_single_subdomain(target_data):
+    sub, domain = target_data
+    target_subdomain = f"{sub}.{domain}"
+    try:
+        ip = socket.gethostbyname(target_subdomain)
+        print(f"{GRAY}    └─ {BOLD_WHITE}{target_subdomain}{GRAY} ➔ Resolved IP: {BOLD_RED}{ip}{RESET}")
+        return {"subdomain": target_subdomain, "ip": ip}
+    except socket.gaierror:
+        return None
+
+
+def enumerate_subdomains(domain, max_threads=5):
+    print(
+        f"\n{BOLD_RED}[+]{RESET} {GRAY}Starting Subdomain Enumeration on {BOLD_WHITE}{domain}{GRAY} (Threads: {max_threads})...{RESET}")
+    found_subdomains = []
+    tasks = [(sub, domain) for sub in COMMON_SUBDOMAINS]
+
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        results = executor.map(check_single_subdomain, tasks)
+        for res in results:
+            if res:
+                found_subdomains.append(res)
+
+    if not found_subdomains:
+        print(f"{GRAY}    └─ [-] No active subdomains found from default wordlist.{RESET}")
+    return found_subdomains
 
 
 def get_whois_info(domain):
@@ -238,40 +295,9 @@ def get_http_headers(domain):
     return headers_info
 
 
-def enumerate_subdomains(domain):
-    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Starting Subdomain Enumeration on {BOLD_WHITE}{domain}{GRAY}...{RESET}")
-    found_subdomains = []
-    for sub in COMMON_SUBDOMAINS:
-        target_subdomain = f"{sub}.{domain}"
-        try:
-            ip = socket.gethostbyname(target_subdomain)
-            print(f"{GRAY}    └─ {BOLD_WHITE}{target_subdomain}{GRAY} ➔ Resolved IP: {BOLD_RED}{ip}{RESET}")
-            found_subdomains.append({"subdomain": target_subdomain, "ip": ip})
-        except socket.gaierror:
-            pass
-    if not found_subdomains:
-        print(f"{GRAY}    └─ [-] No active subdomains found from default wordlist.{RESET}")
-    return found_subdomains
-
-
-def check_ports(ip):
-    open_ports = []
-    print(f"{GRAY}    └─ Scanning common ports on {BOLD_WHITE}{ip}{GRAY}...{RESET}")
-    for port, service in COMMON_PORTS.items():
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(1.0)
-        result = s.connect_ex((ip, port))
-        if result == 0:
-            print(f"        {BOLD_RED}[!] Port {port} ({service}): OPEN{RESET}")
-            open_ports.append({"port": port, "service": service})
-        s.close()
-    if not open_ports:
-        print(f"        {GRAY}[-] No common ports open on {ip}.{RESET}")
-    return open_ports
-
-
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, inspect_ssl=False,
-                   fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False, output_file=None):
+                   fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False, threads=5,
+                   output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -310,7 +336,7 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
                 ip_info["geolocation"] = get_ip_geo(ip)
 
             if scan_ports:
-                ip_info["open_ports"] = check_ports(ip)
+                ip_info["open_ports"] = check_ports(ip, max_threads=threads)
 
             scan_data["ip_addresses"].append(ip_info)
 
@@ -321,7 +347,7 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
             scan_data["dns_records"] = get_dns_records(domain)
 
         if scan_subdomains:
-            scan_data["subdomains"] = enumerate_subdomains(domain)
+            scan_data["subdomains"] = enumerate_subdomains(domain, max_threads=threads)
 
         if fetch_headers:
             scan_data["http_headers"] = get_http_headers(domain)
@@ -407,6 +433,13 @@ def main():
     )
 
     parser.add_argument(
+        "-t", "--threads",
+        type=int,
+        default=5,
+        help="Number of concurrent threads for port scan and subdomain check (Default: 5)"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Output file path to save results in JSON format (e.g., report.json)"
     )
@@ -422,6 +455,7 @@ def main():
         fetch_dns=args.dns_records,
         fetch_robots=args.robots,
         fetch_whois=args.whois,
+        threads=args.threads,
         output_file=args.output
     )
 
