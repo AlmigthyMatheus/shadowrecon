@@ -4,6 +4,7 @@ import json
 import urllib.request
 import ssl
 import re
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 BOLD_RED = "\033[1;91m"
@@ -77,11 +78,24 @@ def check_single_subdomain(target_data):
         return None
 
 
-def enumerate_subdomains(domain, max_threads=5):
+def enumerate_subdomains(domain, wordlist_file=None, max_threads=5):
+    sublist = COMMON_SUBDOMAINS
+    if wordlist_file and os.path.exists(wordlist_file):
+        try:
+            with open(wordlist_file, "r", encoding="utf-8", errors="ignore") as f:
+                loaded = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+                if loaded:
+                    sublist = loaded
+                    print(
+                        f"\n{BOLD_RED}[+]{RESET} {GRAY}Loaded {len(sublist)} entries from custom wordlist: {BOLD_WHITE}{wordlist_file}{RESET}")
+        except Exception as e:
+            print(
+                f"\n{BOLD_RED}[-]{RESET} {GRAY}Failed to read wordlist file: {e}. Falling back to default list.{RESET}")
+
     print(
-        f"\n{BOLD_RED}[+]{RESET} {GRAY}Starting Subdomain Enumeration on {BOLD_WHITE}{domain}{GRAY} (Threads: {max_threads})...{RESET}")
+        f"\n{BOLD_RED}[+]{RESET} {GRAY}Starting Subdomain Enumeration on {BOLD_WHITE}{domain}{GRAY} (Entries: {len(sublist)}, Threads: {max_threads})...{RESET}")
     found_subdomains = []
-    tasks = [(sub, domain) for sub in COMMON_SUBDOMAINS]
+    tasks = [(sub, domain) for sub in sublist]
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         results = executor.map(check_single_subdomain, tasks)
@@ -90,7 +104,7 @@ def enumerate_subdomains(domain, max_threads=5):
                 found_subdomains.append(res)
 
     if not found_subdomains:
-        print(f"{GRAY}    └─ [-] No active subdomains found from default wordlist.{RESET}")
+        print(f"{GRAY}    └─ [-] No active subdomains found.{RESET}")
     return found_subdomains
 
 
@@ -295,9 +309,9 @@ def get_http_headers(domain):
     return headers_info
 
 
-def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_headers=False, inspect_ssl=False,
-                   fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False, threads=5,
-                   output_file=None):
+def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_file=None, fetch_headers=False,
+                   inspect_ssl=False, fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False,
+                   threads=5, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -347,7 +361,7 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, fetch_header
             scan_data["dns_records"] = get_dns_records(domain)
 
         if scan_subdomains:
-            scan_data["subdomains"] = enumerate_subdomains(domain, max_threads=threads)
+            scan_data["subdomains"] = enumerate_subdomains(domain, wordlist_file=wordlist_file, max_threads=threads)
 
         if fetch_headers:
             scan_data["http_headers"] = get_http_headers(domain)
@@ -393,7 +407,12 @@ def main():
     parser.add_argument(
         "-sub", "--subdomains",
         action="store_true",
-        help="Perform wordlist-based subdomain enumeration"
+        help="Perform subdomain enumeration"
+    )
+
+    parser.add_argument(
+        "-wl", "--wordlist",
+        help="Path to custom wordlist text file for subdomain enumeration"
     )
 
     parser.add_argument(
@@ -449,6 +468,7 @@ def main():
         args.domain,
         scan_ports=args.scan_ports,
         scan_subdomains=args.subdomains,
+        wordlist_file=args.wordlist,
         fetch_headers=args.headers,
         inspect_ssl=args.ssl_info,
         fetch_geo=args.geolocation,
