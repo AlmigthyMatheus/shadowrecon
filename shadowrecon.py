@@ -38,6 +38,50 @@ COMMON_SUBDOMAINS = [
     "vpn", "blog", "portal", "stage", "app", "db"
 ]
 
+SECURITY_HEADERS_MAP = {
+    "Strict-Transport-Security": "HSTS (Enforces HTTPS connections)",
+    "Content-Security-Policy": "CSP (Mitigates XSS and data injection)",
+    "X-Frame-Options": "Clickjacking Protection",
+    "X-Content-Type-Options": "MIME Sniffing Prevention",
+    "Referrer-Policy": "Controls Referrer Information Leakage",
+    "Permissions-Policy": "Controls Browser Feature Access"
+}
+
+
+def audit_security_headers(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Auditing Web Security Headers for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    audit_data = {"present": {}, "missing": {}}
+
+    for protocol in ["https", "http"]:
+        url = f"{protocol}://{domain}"
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'})
+
+            with urllib.request.urlopen(req, timeout=4, context=ctx) as response:
+                resp_headers = {k.title(): v for k, v in response.headers.items()}
+
+                for header, desc in SECURITY_HEADERS_MAP.items():
+                    header_title = header.title()
+                    if header_title in resp_headers:
+                        val = resp_headers[header_title]
+                        audit_data["present"][header] = {"value": val, "description": desc}
+                        print(
+                            f"{GRAY}    └─ {BOLD_WHITE}[✔] {header}{GRAY}: {BOLD_WHITE}{val[:45]}{'...' if len(val) > 45 else ''}{RESET}")
+                    else:
+                        audit_data["missing"][header] = desc
+                        print(f"{GRAY}    └─ {BOLD_RED}[✘] {header}{GRAY} is MISSING ({desc}){RESET}")
+                break
+        except Exception:
+            continue
+
+    if not audit_data["present"] and not audit_data["missing"]:
+        print(f"{GRAY}    └─ [-] Could not connect to target to inspect security headers.{RESET}")
+
+    return audit_data
+
 
 def check_single_port(ip_port):
     ip, port, service = ip_port
@@ -311,7 +355,7 @@ def get_http_headers(domain):
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_file=None, fetch_headers=False,
                    inspect_ssl=False, fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False,
-                   threads=5, output_file=None):
+                   fetch_sec=False, threads=5, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -322,7 +366,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
         "ssl_info": {},
         "dns_records": {},
         "robots_txt": {},
-        "whois_info": {}
+        "whois_info": {},
+        "security_headers": {}
     }
 
     try:
@@ -365,6 +410,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
 
         if fetch_headers:
             scan_data["http_headers"] = get_http_headers(domain)
+
+        if fetch_sec:
+            scan_data["security_headers"] = audit_security_headers(domain)
 
         if inspect_ssl:
             scan_data["ssl_info"] = get_ssl_info(domain)
@@ -422,6 +470,12 @@ def main():
     )
 
     parser.add_argument(
+        "-sec", "--security-headers",
+        action="store_true",
+        help="Audit presence and absence of key web security headers (HSTS, CSP, etc.)"
+    )
+
+    parser.add_argument(
         "-ssl", "--ssl-info",
         action="store_true",
         help="Inspect SSL/TLS certificate, expiration date, and SANs"
@@ -475,6 +529,7 @@ def main():
         fetch_dns=args.dns_records,
         fetch_robots=args.robots,
         fetch_whois=args.whois,
+        fetch_sec=args.security_headers,
         threads=args.threads,
         output_file=args.output
     )
