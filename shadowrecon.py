@@ -47,6 +47,49 @@ SECURITY_HEADERS_MAP = {
     "Permissions-Policy": "Controls Browser Feature Access"
 }
 
+WAF_SIGNATURES = {
+    "Cloudflare": ["server: cloudflare", "cf-ray", "__cfduid", "cf_clearance"],
+    "AWS WAF": ["x-amzn-requestid", "x-amz-id-2", "awsalb", "awsalbcors"],
+    "Akamai": ["x-akamai-transformed", "akamai-origin-hop", "server: akamaighost"],
+    "Imperva / Incapsula": ["x-cdn: incapsula", "incap_ses", "visid_incap"],
+    "Sucuri": ["x-sucuri-id", "server: sucuri"],
+    "ModSecurity": ["server: mod_security", "server: modsecurity"]
+}
+
+
+def detect_waf(domain):
+    print(
+        f"\n{BOLD_RED}[+]{RESET} {GRAY}Detecting Web Application Firewall (WAF) for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    detected_wafs = []
+
+    for protocol in ["https", "http"]:
+        url = f"{protocol}://{domain}"
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'})
+
+            with urllib.request.urlopen(req, timeout=4, context=ctx) as response:
+                raw_headers = [f"{k.lower()}: {v.lower()}" for k, v in response.headers.items()]
+                headers_str = " ".join(raw_headers)
+
+                for waf_name, sigs in WAF_SIGNATURES.items():
+                    for sig in sigs:
+                        if sig in headers_str:
+                            if waf_name not in detected_wafs:
+                                detected_wafs.append(waf_name)
+                                print(
+                                    f"{GRAY}    └─ {BOLD_RED}[!] Detected WAF/CDN Protection: {BOLD_WHITE}{waf_name}{GRAY} (Signature: {sig}){RESET}")
+                break
+        except Exception:
+            continue
+
+    if not detected_wafs:
+        print(f"{GRAY}    └─ [-] No obvious WAF / CDN protection signatures detected.{RESET}")
+
+    return detected_wafs
+
 
 def audit_security_headers(domain):
     print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Auditing Web Security Headers for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
@@ -355,7 +398,7 @@ def get_http_headers(domain):
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_file=None, fetch_headers=False,
                    inspect_ssl=False, fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False,
-                   fetch_sec=False, threads=5, output_file=None):
+                   fetch_sec=False, detect_waf_flag=False, threads=5, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -367,7 +410,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
         "dns_records": {},
         "robots_txt": {},
         "whois_info": {},
-        "security_headers": {}
+        "security_headers": {},
+        "waf_protection": []
     }
 
     try:
@@ -398,6 +442,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
                 ip_info["open_ports"] = check_ports(ip, max_threads=threads)
 
             scan_data["ip_addresses"].append(ip_info)
+
+        if detect_waf_flag:
+            scan_data["waf_protection"] = detect_waf(domain)
 
         if fetch_whois:
             scan_data["whois_info"] = get_whois_info(domain)
@@ -476,6 +523,12 @@ def main():
     )
 
     parser.add_argument(
+        "-waf", "--waf-detect",
+        action="store_true",
+        help="Detect presence of WAF / CDN security protections (Cloudflare, AWS WAF, Akamai, etc.)"
+    )
+
+    parser.add_argument(
         "-ssl", "--ssl-info",
         action="store_true",
         help="Inspect SSL/TLS certificate, expiration date, and SANs"
@@ -530,6 +583,7 @@ def main():
         fetch_robots=args.robots,
         fetch_whois=args.whois,
         fetch_sec=args.security_headers,
+        detect_waf_flag=args.waf_detect,
         threads=args.threads,
         output_file=args.output
     )
