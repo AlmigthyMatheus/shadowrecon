@@ -57,6 +57,42 @@ WAF_SIGNATURES = {
 }
 
 
+def check_http_methods(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Auditing Allowed HTTP Methods for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    methods_data = {"allowed": [], "dangerous": []}
+
+    for protocol in ["https", "http"]:
+        url = f"{protocol}://{domain}"
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'}, method='OPTIONS')
+
+            with urllib.request.urlopen(req, timeout=4, context=ctx) as response:
+                allow_header = response.headers.get("Allow") or response.headers.get("Public")
+                if allow_header:
+                    methods = [m.strip() for m in allow_header.split(",")]
+                    methods_data["allowed"] = methods
+                    print(f"{GRAY}    └─ Allowed Methods: {BOLD_WHITE}{', '.join(methods)}{RESET}")
+
+                    dangerous = [m for m in methods if m.upper() in ["PUT", "DELETE", "TRACE", "CONNECT"]]
+                    if dangerous:
+                        methods_data["dangerous"] = dangerous
+                        print(
+                            f"{GRAY}    └─ {BOLD_RED}[!] Potentially Dangerous Methods Enabled: {', '.join(dangerous)}{RESET}")
+                else:
+                    print(f"{GRAY}    └─ [-] Server did not return an 'Allow' header on OPTIONS request.{RESET}")
+                break
+        except Exception:
+            continue
+
+    if not methods_data["allowed"]:
+        print(f"{GRAY}    └─ [-] Could not determine allowed HTTP methods.{RESET}")
+
+    return methods_data
+
+
 def detect_waf(domain):
     print(
         f"\n{BOLD_RED}[+]{RESET} {GRAY}Detecting Web Application Firewall (WAF) for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
@@ -398,7 +434,7 @@ def get_http_headers(domain):
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_file=None, fetch_headers=False,
                    inspect_ssl=False, fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False,
-                   fetch_sec=False, detect_waf_flag=False, threads=5, output_file=None):
+                   fetch_sec=False, detect_waf_flag=False, fetch_methods=False, threads=5, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -411,7 +447,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
         "robots_txt": {},
         "whois_info": {},
         "security_headers": {},
-        "waf_protection": []
+        "waf_protection": [],
+        "http_methods": {}
     }
 
     try:
@@ -445,6 +482,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
 
         if detect_waf_flag:
             scan_data["waf_protection"] = detect_waf(domain)
+
+        if fetch_methods:
+            scan_data["http_methods"] = check_http_methods(domain)
 
         if fetch_whois:
             scan_data["whois_info"] = get_whois_info(domain)
@@ -525,7 +565,13 @@ def main():
     parser.add_argument(
         "-waf", "--waf-detect",
         action="store_true",
-        help="Detect presence of WAF / CDN security protections (Cloudflare, AWS WAF, Akamai, etc.)"
+        help="Detect presence of WAF / CDN security protections"
+    )
+
+    parser.add_argument(
+        "-m", "--http-methods",
+        action="store_true",
+        help="Audit allowed HTTP methods (GET, POST, OPTIONS, PUT, DELETE, TRACE)"
     )
 
     parser.add_argument(
@@ -584,6 +630,7 @@ def main():
         fetch_whois=args.whois,
         fetch_sec=args.security_headers,
         detect_waf_flag=args.waf_detect,
+        fetch_methods=args.http_methods,
         threads=args.threads,
         output_file=args.output
     )
