@@ -56,6 +56,50 @@ WAF_SIGNATURES = {
     "ModSecurity": ["server: mod_security", "server: modsecurity"]
 }
 
+TECH_SIGNATURES = {
+    "WordPress": [r"wp-content", r"wp-includes", r"name=[\"']generator[\"']\s+content=[\"']WordPress"],
+    "Joomla": [r"name=[\"']generator[\"']\s+content=[\"']Joomla", r"/media/system/js/"],
+    "Drupal": [r"name=[\"']generator[\"']\s+content=[\"']Drupal", r"Drupal\.settings"],
+    "Next.js": [r"_next/static", r"__NEXT_DATA__"],
+    "React": [r"data-reactroot", r"react-dom"],
+    "Vue.js": [r"data-v-", r"vue\.js", r"v-app"],
+    "Laravel": [r"laravel_session", r"X-SRF-TOKEN"],
+    "Django": [r"csrftoken", r"django"]
+}
+
+
+def detect_tech(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Detecting CMS & Web Technologies for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    detected_tech = []
+
+    for protocol in ["https", "http"]:
+        url = f"{protocol}://{domain}"
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'})
+
+            with urllib.request.urlopen(req, timeout=4, context=ctx) as response:
+                content = response.read().decode('utf-8', errors='ignore')
+                headers_str = " ".join([f"{k}: {v}" for k, v in response.headers.items()])
+                full_raw = content + " " + headers_str
+
+                for tech_name, patterns in TECH_SIGNATURES.items():
+                    for pattern in patterns:
+                        if re.search(pattern, full_raw, re.IGNORECASE):
+                            if tech_name not in detected_tech:
+                                detected_tech.append(tech_name)
+                                print(f"{GRAY}    └─ {BOLD_RED}[!] Detected Technology: {BOLD_WHITE}{tech_name}{RESET}")
+                break
+        except Exception:
+            continue
+
+    if not detected_tech:
+        print(f"{GRAY}    └─ [-] No obvious CMS or framework signatures detected.{RESET}")
+
+    return detected_tech
+
 
 def check_http_methods(domain):
     print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Auditing Allowed HTTP Methods for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
@@ -434,7 +478,8 @@ def get_http_headers(domain):
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_file=None, fetch_headers=False,
                    inspect_ssl=False, fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False,
-                   fetch_sec=False, detect_waf_flag=False, fetch_methods=False, threads=5, output_file=None):
+                   fetch_sec=False, detect_waf_flag=False, fetch_methods=False, detect_tech_flag=False, threads=5,
+                   output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -448,7 +493,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
         "whois_info": {},
         "security_headers": {},
         "waf_protection": [],
-        "http_methods": {}
+        "http_methods": {},
+        "detected_technologies": []
     }
 
     try:
@@ -482,6 +528,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
 
         if detect_waf_flag:
             scan_data["waf_protection"] = detect_waf(domain)
+
+        if detect_tech_flag:
+            scan_data["detected_technologies"] = detect_tech(domain)
 
         if fetch_methods:
             scan_data["http_methods"] = check_http_methods(domain)
@@ -569,6 +618,12 @@ def main():
     )
 
     parser.add_argument(
+        "-tech", "--tech-detect",
+        action="store_true",
+        help="Detect CMS, web frameworks, and frontend libraries (WordPress, React, Next.js, etc.)"
+    )
+
+    parser.add_argument(
         "-m", "--http-methods",
         action="store_true",
         help="Audit allowed HTTP methods (GET, POST, OPTIONS, PUT, DELETE, TRACE)"
@@ -631,6 +686,7 @@ def main():
         fetch_sec=args.security_headers,
         detect_waf_flag=args.waf_detect,
         fetch_methods=args.http_methods,
+        detect_tech_flag=args.tech_detect,
         threads=args.threads,
         output_file=args.output
     )
