@@ -224,3 +224,48 @@ def detect_tech(domain):
         print(f"{GRAY}    └─ [-] No obvious CMS or framework signatures detected.{RESET}")
 
     return detected_tech
+
+
+def check_cors(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Auditing CORS Configuration for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    cors_data = {"allow_origin": None, "allow_credentials": False, "vulnerable": False}
+
+    for protocol in ["https", "http"]:
+        url = f"{protocol}://{domain}"
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            test_origin = "https://evil-shadowrecon.com"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    'User-Agent': 'ShadowRecon-Bot/1.0',
+                    'Origin': test_origin
+                }
+            )
+
+            with urllib.request.urlopen(req, timeout=4, context=ctx) as response:
+                allow_origin = response.headers.get("Access-Control-Allow-Origin")
+                allow_credentials = response.headers.get("Access-Control-Allow-Credentials", "").lower() == "true"
+
+                if allow_origin:
+                    cors_data["allow_origin"] = allow_origin
+                    cors_data["allow_credentials"] = allow_credentials
+
+                    if allow_origin in [test_origin, "*"]:
+                        cors_data["vulnerable"] = True
+                        print(f"{GRAY}    └─ {BOLD_RED}[!] Misconfiguration Detected!{RESET}")
+                        print(f"{GRAY}        [➔] Access-Control-Allow-Origin: {BOLD_WHITE}{allow_origin}{RESET}")
+                        print(
+                            f"{GRAY}        [➔] Access-Control-Allow-Credentials: {BOLD_WHITE}{allow_credentials}{RESET}")
+                    else:
+                        print(f"{GRAY}    └─ Access-Control-Allow-Origin: {BOLD_WHITE}{allow_origin}{RESET}")
+                else:
+                    print(f"{GRAY}    └─ [-] No CORS headers returned for arbitrary origin.{RESET}")
+                break
+        except Exception:
+            continue
+
+    return cors_data

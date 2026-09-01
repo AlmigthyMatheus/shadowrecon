@@ -11,14 +11,14 @@ from core.modules.geo import get_ip_geo
 from core.modules.whois_info import get_whois_info
 from core.modules.web import (
     get_http_headers, check_robots_txt, audit_security_headers,
-    detect_waf, check_http_methods, detect_tech
+    detect_waf, check_http_methods, detect_tech, check_cors
 )
 
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_file=None, fetch_headers=False,
                    inspect_ssl=False, fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False,
-                   fetch_sec=False, detect_waf_flag=False, fetch_methods=False, detect_tech_flag=False, threads=5,
-                   output_file=None):
+                   fetch_sec=False, detect_waf_flag=False, fetch_methods=False, detect_tech_flag=False,
+                   check_cors_flag=False, threads=5, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -33,7 +33,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
         "security_headers": {},
         "waf_protection": [],
         "http_methods": {},
-        "detected_technologies": []
+        "detected_technologies": [],
+        "cors_policy": {}
     }
 
     try:
@@ -70,6 +71,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
 
         if detect_tech_flag:
             scan_data["detected_technologies"] = detect_tech(domain)
+
+        if check_cors_flag:
+            scan_data["cors_policy"] = check_cors(domain)
 
         if fetch_methods:
             scan_data["http_methods"] = check_http_methods(domain)
@@ -163,6 +167,12 @@ def main():
     )
 
     parser.add_argument(
+        "-cors", "--cors-check",
+        action="store_true",
+        help="Audit CORS policy for arbitrary origin reflection and credentials allowance"
+    )
+
+    parser.add_argument(
         "-m", "--http-methods",
         action="store_true",
         help="Audit allowed HTTP methods (GET, POST, OPTIONS, PUT, DELETE, TRACE)"
@@ -226,6 +236,7 @@ def main():
         detect_waf_flag=args.waf_detect,
         fetch_methods=args.http_methods,
         detect_tech_flag=args.tech_detect,
+        check_cors_flag=args.cors_check,
         threads=args.threads,
         output_file=args.output
     )
