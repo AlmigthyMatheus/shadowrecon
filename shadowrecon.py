@@ -11,14 +11,15 @@ from core.modules.geo import get_ip_geo
 from core.modules.whois_info import get_whois_info
 from core.modules.web import (
     get_http_headers, check_robots_txt, audit_security_headers,
-    detect_waf, check_http_methods, detect_tech, check_cors
+    detect_waf, check_http_methods, detect_tech, check_cors,
+    get_redirect_chain
 )
 
 
 def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_file=None, fetch_headers=False,
                    inspect_ssl=False, fetch_geo=False, fetch_dns=False, fetch_robots=False, fetch_whois=False,
                    fetch_sec=False, detect_waf_flag=False, fetch_methods=False, detect_tech_flag=False,
-                   check_cors_flag=False, threads=5, output_file=None):
+                   check_cors_flag=False, fetch_redirects_flag=False, threads=5, output_file=None):
     scan_data = {
         "target_domain": domain,
         "official_hostname": None,
@@ -34,7 +35,8 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
         "waf_protection": [],
         "http_methods": {},
         "detected_technologies": [],
-        "cors_policy": {}
+        "cors_policy": {},
+        "redirect_chain": []
     }
 
     try:
@@ -65,6 +67,9 @@ def resolve_domain(domain, scan_ports=False, scan_subdomains=False, wordlist_fil
                 ip_info["open_ports"] = check_ports(ip, max_threads=threads)
 
             scan_data["ip_addresses"].append(ip_info)
+
+        if fetch_redirects_flag:
+            scan_data["redirect_chain"] = get_redirect_chain(domain)
 
         if detect_waf_flag:
             scan_data["waf_protection"] = detect_waf(domain)
@@ -126,6 +131,12 @@ def main():
     )
 
     parser.add_argument(
+        "-a", "--all",
+        action="store_true",
+        help="Run ALL available reconnaissance modules at once"
+    )
+
+    parser.add_argument(
         "-sp", "--scan-ports",
         action="store_true",
         help="Perform a quick TCP scan on common ports (21, 22, 80, 443, 8080)"
@@ -169,7 +180,13 @@ def main():
     parser.add_argument(
         "-cors", "--cors-check",
         action="store_true",
-        help="Audit CORS policy for arbitrary origin reflection and credentials allowance"
+        help="Audit CORS policy for arbitrary origin reflection"
+    )
+
+    parser.add_argument(
+        "-red", "--redirects",
+        action="store_true",
+        help="Track HTTP/HTTPS redirect chain and HTTP status hops"
     )
 
     parser.add_argument(
@@ -221,22 +238,26 @@ def main():
     )
 
     args = parser.parse_args()
+
+    run_all = args.all
+
     resolve_domain(
         args.domain,
-        scan_ports=args.scan_ports,
-        scan_subdomains=args.subdomains,
+        scan_ports=args.scan_ports or run_all,
+        scan_subdomains=args.subdomains or run_all,
         wordlist_file=args.wordlist,
-        fetch_headers=args.headers,
-        inspect_ssl=args.ssl_info,
-        fetch_geo=args.geolocation,
-        fetch_dns=args.dns_records,
-        fetch_robots=args.robots,
-        fetch_whois=args.whois,
-        fetch_sec=args.security_headers,
-        detect_waf_flag=args.waf_detect,
-        fetch_methods=args.http_methods,
-        detect_tech_flag=args.tech_detect,
-        check_cors_flag=args.cors_check,
+        fetch_headers=args.headers or run_all,
+        inspect_ssl=args.ssl_info or run_all,
+        fetch_geo=args.geolocation or run_all,
+        fetch_dns=args.dns_records or run_all,
+        fetch_robots=args.robots or run_all,
+        fetch_whois=args.whois or run_all,
+        fetch_sec=args.security_headers or run_all,
+        detect_waf_flag=args.waf_detect or run_all,
+        fetch_methods=args.http_methods or run_all,
+        detect_tech_flag=args.tech_detect or run_all,
+        check_cors_flag=args.cors_check or run_all,
+        fetch_redirects_flag=args.redirects or run_all,
         threads=args.threads,
         output_file=args.output
     )

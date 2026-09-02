@@ -269,3 +269,56 @@ def check_cors(domain):
             continue
 
     return cors_data
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def get_redirect_chain(domain):
+    print(f"\n{BOLD_RED}[+]{RESET} {GRAY}Tracking HTTP Redirect Chain for {BOLD_WHITE}{domain}{GRAY}...{RESET}")
+    chain = []
+    current_url = f"http://{domain}"
+    max_redirects = 5
+
+    for _ in range(max_redirects):
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            opener = urllib.request.build_opener(NoRedirectHandler(), urllib.request.HTTPSHandler(context=ctx))
+            req = urllib.request.Request(current_url, headers={'User-Agent': 'ShadowRecon-Bot/1.0'})
+
+            try:
+                response = opener.open(req, timeout=4)
+                status = response.status
+                chain.append({"url": current_url, "status": status})
+                print(f"{GRAY}    └─ [{status}] {BOLD_WHITE}{current_url}{RESET} {GRAY}(Final Destination){RESET}")
+                break
+            except urllib.error.HTTPError as e:
+                if e.code in [301, 302, 303, 307, 308]:
+                    location = e.headers.get('Location')
+                    chain.append({"url": current_url, "status": e.code, "redirect_to": location})
+                    print(
+                        f"{GRAY}    └─ [{BOLD_RED}{e.code}{GRAY}] {BOLD_WHITE}{current_url}{GRAY} ➔ {BOLD_WHITE}{location}{RESET}")
+                    if not location:
+                        break
+                    if location.startswith('/'):
+                        proto = current_url.split("://")[0]
+                        host = current_url.split("://")[1].split("/")[0]
+                        current_url = f"{proto}://{host}{location}"
+                    else:
+                        current_url = location
+                else:
+                    chain.append({"url": current_url, "status": e.code})
+                    print(f"{GRAY}    └─ [{e.code}] {BOLD_WHITE}{current_url}{RESET}")
+                    break
+        except Exception:
+            break
+
+    if not chain:
+        print(f"{GRAY}    └─ [-] Could not track HTTP redirect chain.{RESET}")
+
+    return chain
